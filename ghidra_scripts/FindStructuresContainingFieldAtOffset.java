@@ -32,12 +32,12 @@ public class FindStructuresContainingFieldAtOffset extends GhidraScript
 		public TypeInfo parent;
 		public int offsetInParent;
 		public int remainingOffset;
-		public Structure struct;
+		public DataType struct;
 		public Union union;
 		public String name;
 		public int depth;
 
-		public TypeInfo(TypeInfo parent, int offsetInParent, int remainingOffset, Structure struct, Union union, String name)
+		public TypeInfo(TypeInfo parent, int offsetInParent, int remainingOffset, DataType struct, Union union, String name)
 		{
 			this.parent = parent;
 			this.offsetInParent = offsetInParent;
@@ -143,9 +143,9 @@ public class FindStructuresContainingFieldAtOffset extends GhidraScript
 			}*/
 			
 			// if this is a struct, check through its fields
-			if (typeInfo.struct != null)
+			if (typeInfo.struct != null && typeInfo.struct instanceof Structure)
 			{
-				Structure structure = typeInfo.struct;
+				Structure structure = (Structure)typeInfo.struct;
 				
 				/*boolean isKTHREAD = structure.getDisplayName().contains("_KTHREAD");
 				if (isKTHREAD)
@@ -160,10 +160,15 @@ public class FindStructuresContainingFieldAtOffset extends GhidraScript
 					if (componentAtOffset.getOffset() == targetOffsetInType)
 					{
 						// this field sits exactly at the offset we're looking for, so check if it's the right type
-						if (componentAtOffset.getDataType().getDisplayName().contains(targetFieldTypeName))
+						if (componentAtOffset.getDataType().getDisplayName().toLowerCase().contains(targetFieldTypeName.toLowerCase()))
 						{
 							//println("targetOffsetInType=" + targetOffsetInType);
-							TypeInfo match = new TypeInfo(typeInfo, componentAtOffset.getOffset(), targetOffsetInType - componentAtOffset.getOffset(), structure, null, componentAtOffset.getFieldName());
+							String fieldName = componentAtOffset.getFieldName();
+							if (fieldName == null)
+							{
+								fieldName = "[unnamed_field@0x" + Integer.toHexString(componentAtOffset.getOffset()) + "]";
+							}
+							TypeInfo match = new TypeInfo(typeInfo, componentAtOffset.getOffset(), targetOffsetInType - componentAtOffset.getOffset(), structure, null, fieldName);
 							printMatch(match, componentAtOffset);
 						}
 					}
@@ -180,7 +185,7 @@ public class FindStructuresContainingFieldAtOffset extends GhidraScript
 							fieldName = "[unnamed_field@0x" + Integer.toHexString(componentAtOffset.getOffset()) + "]";
 						}
 						
-						String objectClass = (componentType instanceof Structure) ? "struct" : "union";
+						//String objectClass = (componentType instanceof Structure) ? "struct" : "union";
 						
 						//println("Investgating " + objectClass + " " + fieldName + " at offset 0x" + Integer.toHexString(componentAtOffset.getOffset()) + " (remaining offset = 0x" + Integer.toHexString(targetOffsetInType - componentAtOffset.getOffset()) + ")");
 						
@@ -191,10 +196,15 @@ public class FindStructuresContainingFieldAtOffset extends GhidraScript
 							typeInfoIterator.add(new TypeInfo(typeInfo, componentAtOffset.getOffset(), targetOffsetInType - componentAtOffset.getOffset(), (Structure)componentType, null, fieldName));
 							typeInfoIterator.previous();
 						}
-						
-						if (componentType instanceof Union)
+						else if (componentType instanceof Union)
 						{
 							typeInfoIterator.add(new TypeInfo(typeInfo, componentAtOffset.getOffset(), targetOffsetInType - componentAtOffset.getOffset(), null, (Union)componentType, fieldName));
+							typeInfoIterator.previous();
+						}
+						else if (componentType instanceof Composite)
+						{
+							println("WARNING: Unexpected type.");
+							typeInfoIterator.add(new TypeInfo(typeInfo, componentAtOffset.getOffset(), targetOffsetInType - componentAtOffset.getOffset(), (Composite)componentType, null, fieldName));
 							typeInfoIterator.previous();
 						}
 					//}
@@ -216,10 +226,40 @@ public class FindStructuresContainingFieldAtOffset extends GhidraScript
 					if (targetOffsetInType == 0)
 					{
 						// this field sits exactly at the offset we're looking for, so check if it's the right type
-						if (unionComponent.getDataType().getDisplayName().contains(targetFieldTypeName))
+						if (unionComponent.getDataType().getDisplayName().toLowerCase().contains(targetFieldTypeName.toLowerCase()))
 						{
-							TypeInfo match = new TypeInfo(typeInfo, 0, 0, (Structure)unionComponent, null, unionComponent.getFieldName());
-							printMatch(match, unionComponent);
+							DataType unionComponentType = unionComponent.getDataType();
+							
+							String fieldName = unionComponent.getFieldName();
+							if (fieldName == null)
+							{
+								fieldName = "[unnamed_field@0x" + Integer.toHexString(unionComponent.getOffset()) + "]";
+							}
+							
+							TypeInfo match = null;
+							if (unionComponentType instanceof Structure)
+							{
+								match = new TypeInfo(typeInfo, 0, 0, (Structure)unionComponentType, null, fieldName);
+							}
+							else if (unionComponentType instanceof Union)
+							{
+								match = new TypeInfo(typeInfo, 0, 0, null, (Union)unionComponentType, fieldName);
+							}
+							else if (unionComponentType instanceof Pointer)
+							{
+								match = new TypeInfo(typeInfo, 0, 0, (Pointer)unionComponentType, null, fieldName);
+							}
+							else if (unionComponentType instanceof Composite)
+							{
+								println("WARNING: Unexpected type.");
+								match = new TypeInfo(typeInfo, 0, 0, unionComponentType, null, fieldName);
+								//println("Found match with an instance type neither structure nor union!");
+								//println(unionComponentType.toString() + " - " + unionComponentType.getClass().toString());
+							}
+							if (match != null)
+							{
+								printMatch(match, unionComponent);
+							}
 						}
 					}
 					if (unionComponent.getLength() > targetOffsetInType)
@@ -228,16 +268,27 @@ public class FindStructuresContainingFieldAtOffset extends GhidraScript
 						
 						DataType componentType = unionComponent.getDataType();
 						
-						if (componentType instanceof Structure)
+						String fieldName = unionComponent.getFieldName();
+						if (fieldName == null)
 						{
-							typeInfoIterator.add(new TypeInfo(typeInfo, 0, typeInfo.remainingOffset, (Structure)componentType, null, unionComponent.getFieldName()));
-							typeInfoIterator.previous();
+							fieldName = "[unnamed_field@0x" + Integer.toHexString(unionComponent.getOffset()) + "]";
 						}
 						
-						if (componentType instanceof Union)
+						if (componentType instanceof Structure)
+						{
+							typeInfoIterator.add(new TypeInfo(typeInfo, 0, typeInfo.remainingOffset, (Structure)componentType, null, fieldName));
+							typeInfoIterator.previous();
+						}
+						else if (componentType instanceof Union)
 						{
 							
-							typeInfoIterator.add(new TypeInfo(typeInfo, 0, typeInfo.remainingOffset, null, (Union)componentType, unionComponent.getFieldName()));
+							typeInfoIterator.add(new TypeInfo(typeInfo, 0, typeInfo.remainingOffset, null, (Union)componentType, fieldName));
+							typeInfoIterator.previous();
+						}
+						else if (componentType instanceof Composite)
+						{
+							println("WARNING: Unexpected type.");
+							typeInfoIterator.add(new TypeInfo(typeInfo, 0, typeInfo.remainingOffset, (Composite)componentType, null, fieldName));
 							typeInfoIterator.previous();
 						}
 					}
