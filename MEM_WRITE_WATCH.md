@@ -8,7 +8,7 @@
 >
 > To retrieve the addresses of the pages that have been written to since the region was allocated or the write-tracking state was reset, call the [GetWriteWatch](https://docs.microsoft.com/en-us/windows/desktop/api/memoryapi/nf-memoryapi-getwritewatch) function. To reset the write-tracking state, call GetWriteWatch or [ResetWriteWatch](https://docs.microsoft.com/en-us/windows/desktop/api/memoryapi/nf-memoryapi-resetwritewatch). The write-tracking feature remains enabled for the memory region until the region is freed.
 
-Internally this is implemented as a kind of shadow-bitmap of page dirty bits, with some additional logic glued in between.
+Internally this is implemented as a kind of shadow-bitmap of page dirty bits, with some additional logic glued in between. You can read my reverse engineered source [here](MEM_WRITE_WATCH_internals.c).
 
 When you call `VirtualAlloc` it goes through to `NtAllocateVirtualMemory`, which then calls into `MiAllocateVirtualMemory` using an opaque struct that is prepared by `MiAllocateVirtualMemoryPrepare`.
 
